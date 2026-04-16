@@ -14,6 +14,34 @@ DAEMON_URL = f"http://{os.environ.get('SSH_TUNNEL_MANAGER_HOST', '127.0.0.1')}:{
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 
+
+class ToolTip:
+    """简单的鼠标悬停提示类"""
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip_window = None
+        self.widget.bind("<Enter>", self.show_tooltip)
+        self.widget.bind("<Leave>", self.hide_tooltip)
+
+    def show_tooltip(self, event=None):
+        if self.tooltip_window or not self.text:
+            return
+        x, y, _, _ = self.widget.bbox("insert") if hasattr(self.widget, 'bbox') else (0, 0, 0, 0)
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 25
+        self.tooltip_window = ctk.CTkToplevel(self.widget)
+        self.tooltip_window.wm_overrideredirect(True)
+        self.tooltip_window.wm_geometry(f"+{x}+{y}")
+        label = ctk.CTkLabel(self.tooltip_window, text=self.text, font=ctk.CTkFont(size=11),
+                             fg_color=("gray90", "gray20"), text_color=("gray30", "gray70"))
+        label.grid(row=0, column=0, padx=5, pady=3)
+
+    def hide_tooltip(self, event=None):
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
+
 class TunnelApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -168,13 +196,14 @@ class TunnelApp(ctk.CTk):
         dialog = ctk.CTkToplevel(self)
         is_edit = edit_name is not None
         dialog.title("编辑隧道" if is_edit else "添加隧道")
-        dialog.geometry("400x500")
+        dialog.geometry("550x720")
 
         entries = {}
-        fields = ["name", "ssh_host", "ssh_port", "ssh_user", "ssh_password", "ssh_pkey", "local_bind_port", "remote_bind_host", "remote_bind_port"]
-        defaults = {"ssh_port": "22", "remote_bind_host": "127.0.0.1"}
+        fields = ["name", "tunnel_type", "ssh_host", "ssh_port", "ssh_user", "ssh_password", "ssh_pkey", "local_bind_port", "remote_bind_host", "remote_bind_port"]
+        defaults = {"ssh_port": "22", "tunnel_type": "local", "remote_bind_host": "127.0.0.1"}
         labels_cn = {
             "name": "名称",
+            "tunnel_type": "隧道类型",
             "ssh_host": "SSH 主机",
             "ssh_port": "SSH 端口",
             "ssh_user": "SSH 用户",
@@ -184,6 +213,55 @@ class TunnelApp(ctk.CTk):
             "remote_bind_host": "远端主机",
             "remote_bind_port": "远端端口"
         }
+        field_hints = {
+            "name": "隧道的唯一标识名称",
+            "tunnel_type": "local=正向(访问远程), remote=反向(暴露本地)",
+            "ssh_host": "SSH服务器地址（IP或域名）",
+            "ssh_port": "SSH服务端口，默认22",
+            "ssh_user": "SSH登录用户名",
+            "ssh_password": "密码认证（推荐使用私钥）",
+            "ssh_pkey": "私钥文件路径，如 ~/.ssh/id_rsa",
+            "local_bind_port": "正向:本机监听端口 | 反向:本机服务端口",
+            "remote_bind_host": "正向:远端目标主机 | 反向:通常127.0.0.1",
+            "remote_bind_port": "正向:远端目标端口 | 反向:SSH服务器监听端口"
+        }
+        tunnel_type_values = ["local", "remote"]
+
+        # 帮助说明文本
+        help_texts = {
+            "local": """【正向隧道 (local)】访问远程服务器上的服务
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+流向: 本机监听端口 → SSH服务器 → 远端目标端口
+
+示例: 本机13306 → SSH服务器 → 远端MySQL 3306
+      访问本机13306 = 访问远程数据库
+
+字段说明:
+• 本地端口: 本机监听端口（你访问的端口）
+• 远端端口: 远程服务的实际端口
+• 远端主机: 目标服务所在主机""",
+            "remote": """【反向隧道 (remote)】让外网访问本机服务
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+流向: SSH服务器监听端口 → 本机服务端口
+
+示例: SSH服务器8080 → 本机Web应用8080
+      外网访问SSH服务器:8080 = 访问你本机
+
+字段说明:
+• 本地端口: 本机服务端口（你的应用端口）
+• 远端端口: SSH服务器对外监听端口
+• 远端主机: 通常为127.0.0.1
+
+前提: SSH服务器需开启 GatewayPorts"""
+        }
+
+        # 帮助说明框
+        help_frame = ctk.CTkFrame(dialog, fg_color=("gray90", "gray20"))
+        help_frame.grid(row=0, column=0, columnspan=3, padx=10, pady=10, sticky="ew")
+
+        help_label = ctk.CTkLabel(help_frame, text=help_texts["local"], font=ctk.CTkFont(size=11),
+                                   justify="left", text_color=("gray30", "gray70"))
+        help_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
         # Pre-fill values if editing
         initial_values = {}
@@ -191,6 +269,7 @@ class TunnelApp(ctk.CTk):
             t = config_manager.config.tunnels[edit_name]
             initial_values = {
                 "name": edit_name,
+                "tunnel_type": t.tunnel_type,
                 "ssh_host": t.ssh_host,
                 "ssh_port": str(t.ssh_port),
                 "ssh_user": t.ssh_user,
@@ -200,18 +279,41 @@ class TunnelApp(ctk.CTk):
                 "remote_bind_host": t.remote_bind_host,
                 "remote_bind_port": str(t.remote_bind_port)
             }
+            # 设置初始帮助文本
+            help_label.configure(text=help_texts.get(t.tunnel_type, help_texts["local"]))
+
+        # 更新帮助文本的回调函数
+        def update_help_text(choice):
+            help_label.configure(text=help_texts.get(choice, help_texts["local"]))
 
         for i, field in enumerate(fields):
+            row_idx = i + 1  # row 0 是帮助框
             lbl = ctk.CTkLabel(dialog, text=labels_cn.get(field, field))
-            lbl.grid(row=i, column=0, padx=10, pady=5, sticky="e")
-            ent = ctk.CTkEntry(dialog, width=200)
-            ent.grid(row=i, column=1, padx=10, pady=5, sticky="w")
-            # 编辑模式只用初始值，添加模式只用默认值
-            if is_edit and field in initial_values:
-                ent.insert(0, initial_values[field])
-            elif field in defaults:
-                ent.insert(0, defaults[field])
-            entries[field] = ent
+            lbl.grid(row=row_idx, column=0, padx=10, pady=5, sticky="e")
+
+            # 字段提示（鼠标悬停提示）
+            hint_label = ctk.CTkLabel(dialog, text="?", width=20, text_color="gray")
+            hint_label.grid(row=row_idx, column=2, padx=5, pady=5, sticky="w")
+            # 创建提示tooltip
+            ToolTip(hint_label, field_hints.get(field, ""))
+
+            if field == "tunnel_type":
+                opt = ctk.CTkOptionMenu(dialog, values=tunnel_type_values, width=200, command=update_help_text)
+                if is_edit and "tunnel_type" in initial_values:
+                    opt.set(initial_values["tunnel_type"])
+                else:
+                    opt.set(defaults.get("tunnel_type", "local"))
+                opt.grid(row=row_idx, column=1, padx=10, pady=5, sticky="w")
+                entries[field] = opt
+            else:
+                ent = ctk.CTkEntry(dialog, width=200)
+                ent.grid(row=row_idx, column=1, padx=10, pady=5, sticky="w")
+                # 编辑模式只用初始值，添加模式只用默认值
+                if is_edit and field in initial_values:
+                    ent.insert(0, initial_values[field])
+                elif field in defaults:
+                    ent.insert(0, defaults[field])
+                entries[field] = ent
 
         def save_tunnel():
             name = entries["name"].get()
@@ -228,7 +330,8 @@ class TunnelApp(ctk.CTk):
                     local_bind_port=int(entries["local_bind_port"].get()),
                     remote_bind_host=entries["remote_bind_host"].get(),
                     remote_bind_port=int(entries["remote_bind_port"].get()),
-                    autostart=False
+                    autostart=False,
+                    tunnel_type=entries["tunnel_type"].get()
                 )
                 if is_edit:
                     # 如果名称改变了，先删除旧的
@@ -245,7 +348,7 @@ class TunnelApp(ctk.CTk):
                 messagebox.showerror("错误", str(e))
 
         btn_save = ctk.CTkButton(dialog, text="保存", command=save_tunnel)
-        btn_save.grid(row=len(fields), column=0, columnspan=2, pady=20)
+        btn_save.grid(row=len(fields) + 1, column=0, columnspan=3, pady=20)
 
     def poll_daemon(self):
         was_offline = False
@@ -324,7 +427,9 @@ class TunnelApp(ctk.CTk):
             ui["frame"].grid(row=i) # Ensure correct order
 
             conf = info.get("config", {})
-            desc = f"本地: {conf.get('local_bind_port')} -> {conf.get('ssh_host')}:{conf.get('ssh_port')} -> {conf.get('remote_bind_host')}:{conf.get('remote_bind_port')}"
+            t_type = conf.get("tunnel_type", "local")
+            type_label = "反向" if t_type == "remote" else "正向"
+            desc = f"{type_label}隧道: 本地: {conf.get('local_bind_port')} -> {conf.get('ssh_host')}:{conf.get('ssh_port')} -> 远端: {conf.get('remote_bind_host')}:{conf.get('remote_bind_port')}"
             ui["lbl_desc"].configure(text=desc)
 
             if status == "active":

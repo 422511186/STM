@@ -17,6 +17,7 @@ class TunnelConfig(BaseModel):
     remote_bind_host: str = "127.0.0.1"
     remote_bind_port: int
     autostart: bool = False
+    tunnel_type: str = "local"  # "local" | "remote"
 
 class AppConfig(BaseModel):
     tunnels: Dict[str, TunnelConfig] = Field(default_factory=dict)

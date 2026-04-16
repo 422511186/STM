@@ -17,6 +17,73 @@
 - 配置可迁移：配置采用 YAML 文件，可直接导出/拷贝到新设备导入复用
 - 状态监控：实时显示 `inactive / connecting / active / error`，并携带错误信息
 - 自动重连：隧道异常断开后，Daemon 会周期性尝试重新建立连接
+- 双向隧道：支持 **正向隧道（-L）** 和 **反向隧道（-R）**，可从外网访问内网服务
+
+---
+
+## 隧道类型详解
+
+### 正向隧道（Local / -L）
+
+**用途**：在本地访问远程服务器上的服务（如远程数据库、内网 Web 服务）
+
+**流向**：`本机监听端口 → SSH服务器 → 远端目标端口`
+
+```
+┌─────────┐                    ┌─────────────┐                    ┌─────────────┐
+│  本机   │  访问 127.0.0.1    │  SSH服务器  │    转发请求        │  远端目标   │
+│         │ ─────────────────→ │  10.0.0.10  │ ─────────────────→ │  MySQL      │
+│ :13306  │                    │             │                    │  :3306      │
+└─────────┘                    └─────────────┘                    └─────────────┘
+```
+
+**示例场景**：公司内网有一台 MySQL 服务器（10.0.0.10:3306），你在家中需要访问它。
+
+```bash
+# 配置后，访问本机 13306 端口 = 访问远程 MySQL 3306
+python main.py cli add mysql_tunnel 10.0.0.10 ubuntu 13306 3306 --pkey ~/.ssh/id_rsa
+```
+
+**字段含义**：
+- `local_bind_port`（本地端口）：本机监听的端口，你访问这个端口
+- `remote_bind_port`（远端端口）：远程服务的实际端口
+- `remote_bind_host`（远端主机）：目标服务所在主机（SSH服务器能访问的地址）
+
+---
+
+### 反向隧道（Remote / -R）
+
+**用途**：让外网用户访问你本机的服务（如本地开发的 Web 应用、内网服务暴露到公网）
+
+**流向**：`SSH服务器监听端口 → 本机目标端口`
+
+```
+┌─────────────┐                    ┌─────────────┐                    ┌─────────┐
+│  外网用户   │  访问公网IP        │  SSH服务器  │    转发请求        │  本机    │
+│             │ ─────────────────→ │  公网IP     │ ─────────────────→ │  Web     │
+│             │      :8080         │             │                    │  :8080   │
+└─────────────┘                    └─────────────┘                    └─────────┘
+```
+
+**示例场景**：你在本地开发了一个 Web 应用（localhost:8080），需要让客户临时访问演示。
+
+```bash
+# 配置后，外网访问 SSH服务器:8080 = 访问你本机的 Web应用
+python main.py cli add web_tunnel 公网服务器IP ubuntu 8080 8080 --tunnel-type remote --pkey ~/.ssh/id_rsa
+```
+
+**字段含义**（注意与正向隧道相反）：
+- `local_bind_port`（本地端口）：你本机服务的端口（被转发的端口）
+- `remote_bind_port`（远端端口）：SSH服务器上对外监听的端口
+- `remote_bind_host`（远端主机）：通常为 `127.0.0.1`（SSH服务器本地监听）
+
+**反向隧道前提条件**：
+1. SSH服务器需开启 GatewayPorts，编辑 `/etc/ssh/sshd_config`：
+   ```bash
+   GatewayPorts yes  # 或 clientspecified
+   ```
+2. 重启 SSH 服务：`sudo systemctl restart sshd`
+3. 确保 SSH服务器防火墙开放 `remote_bind_port` 端口
 
 ---
 
@@ -69,7 +136,7 @@ python main.py cli status
 
 ### 2) 添加一个隧道配置
 
-示例：将远端主机 `10.0.0.10` 的 `3306`（MySQL）映射到本机 `13306`
+示例：将远端主机 `10.0.0.10` 的 `3306`（MySQL）映射到本机 `13306`（正向隧道 -L）
 
 ```bash
 python main.py cli add mysql_tunnel 10.0.0.10 ubuntu 13306 3306 --remote-host 127.0.0.1 --ssh-port 22 --pkey ~/.ssh/id_rsa
@@ -80,6 +147,16 @@ python main.py cli add mysql_tunnel 10.0.0.10 ubuntu 13306 3306 --remote-host 12
 ```bash
 python main.py cli add mysql_tunnel 10.0.0.10 ubuntu 13306 3306 --password "your_password"
 ```
+
+### 反向隧道（-R）示例
+
+将本机的 `8080` 端口服务（如 Web 应用）通过 SSH 服务器 `10.0.0.10` 暴露到互联网：
+
+```bash
+python main.py cli add my-web 10.0.0.10 ubuntu 8080 8080 --tunnel-type remote --pkey ~/.ssh/id_rsa
+```
+
+> 说明：反向隧道在 SSH 服务器上监听端口（`--remote-port`），外部可通过 `SSH服务器IP:端口` 访问本机服务。
 
 ### 3) 启动/停止隧道
 
@@ -149,6 +226,7 @@ python main.py cli add <name> <ssh_host> <ssh_user> <local_port> <remote_port> [
 ```
 
 常用可选参数：
+- `--tunnel-type`：隧道类型，`local`（正向/-L，默认）或 `remote`（反向/-R）
 - `--remote-host`：远端目标 host（默认 `127.0.0.1`）
 - `--ssh-port`：SSH 端口（默认 `22`）
 - `--password`：SSH 密码（可选）
@@ -204,15 +282,17 @@ tunnels:
     remote_bind_host: 127.0.0.1
     remote_bind_port: 3306
     autostart: false
+    tunnel_type: "local"   # "local"=正向隧道(-L), "remote"=反向隧道(-R)
 ```
 
-字段说明（与 [TunnelConfig](file:///workspace/core/config.py#L7-L17) 对应）：
+字段说明（与 [TunnelConfig](file:///workspace/core/config.py#L7-L18) 对应）：
 - `ssh_host / ssh_port / ssh_user`：SSH 登录目标
 - `ssh_password`：密码（可选；不推荐写入配置文件）
 - `ssh_pkey`：私钥路径（可选；推荐）
 - `local_bind_host / local_bind_port`：本地监听
 - `remote_bind_host / remote_bind_port`：远端转发目标
 - `autostart`：Daemon 启动时是否自动拉起此隧道
+- `tunnel_type`：`local`（正向/-L，默认）或 `remote`（反向/-R）
 
 ---
 

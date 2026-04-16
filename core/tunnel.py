@@ -1,6 +1,8 @@
 import threading
 import time
 import logging
+import socket
+import paramiko
 from sshtunnel import SSHTunnelForwarder, BaseSSHTunnelForwarderError
 from core.config import TunnelConfig
 
@@ -12,6 +14,121 @@ class TunnelState:
     ACTIVE = "active"
     ERROR = "error"
     CONNECTING = "connecting"
+
+def _make_ssh_client(config: TunnelConfig):
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    if config.ssh_pkey:
+        client.connect(
+            config.ssh_host,
+            port=config.ssh_port,
+            username=config.ssh_user,
+            key_filename=config.ssh_pkey,
+            look_for_keys=False,
+            password=None,
+        )
+    elif config.ssh_password:
+        client.connect(
+            config.ssh_host,
+            port=config.ssh_port,
+            username=config.ssh_user,
+            password=config.ssh_password,
+            look_for_keys=False,
+        )
+    else:
+        client.connect(
+            config.ssh_host,
+            port=config.ssh_port,
+            username=config.ssh_user,
+        )
+    return client
+
+class ReverseTunnelController:
+    """反向隧道控制器：在 SSH 服务器上监听端口，将流量转发到本地服务"""
+    def __init__(self, name: str, config: TunnelConfig):
+        self.name = name
+        self.config = config
+        self.server = None
+        self.transport = None
+        self.client = None
+        self.state = TunnelState.INACTIVE
+        self.error_message = ""
+        self._stop_event = threading.Event()
+        self._monitor_thread = None
+
+    def start(self):
+        if self.state in [TunnelState.ACTIVE, TunnelState.CONNECTING]:
+            return
+        self.state = TunnelState.CONNECTING
+        self._stop_event.clear()
+        self._monitor_thread = threading.Thread(target=self._run_and_monitor, daemon=True)
+        self._monitor_thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        self._close()
+        self.state = TunnelState.INACTIVE
+
+    def get_status(self) -> dict:
+        return {
+            "name": self.name,
+            "state": self.state,
+            "error": self.error_message,
+            "local_port": self.config.remote_bind_port if self.state == TunnelState.ACTIVE else None
+        }
+
+    def _close(self):
+        try:
+            if self.transport:
+                self.transport.close()
+        except Exception:
+            pass
+        try:
+            if self.client:
+                self.client.close()
+        except Exception:
+            pass
+        self.transport = None
+        self.client = None
+
+    def _run_and_monitor(self):
+        while not self._stop_event.is_set():
+            self._close()
+            try:
+                self.client = _make_ssh_client(self.config)
+                self.transport = self.client.get_transport()
+                self.transport.set_keepalive(5.0)
+                # request_port_forward(listen_port, reverse=True) 实现 -R 反向转发
+                listen_port = self.transport.request_port_forward(
+                    self.config.remote_bind_port,
+                    reverse=True
+                )
+                self.state = TunnelState.ACTIVE
+                self.error_message = ""
+                logger.info(f"Reverse tunnel {self.name} started on remote port {listen_port}")
+
+                # 等待 stop 事件或传输关闭
+                while not self._stop_event.is_set():
+                    if not self.transport.is_active():
+                        break
+                    time.sleep(1)
+
+            except Exception as e:
+                self.state = TunnelState.ERROR
+                self.error_message = str(e)
+                logger.error(f"Reverse tunnel {self.name} error: {e}")
+                self._close()
+
+            if not self._stop_event.is_set():
+                # 10 秒后重试
+                for _ in range(10):
+                    if self._stop_event.is_set():
+                        break
+                    time.sleep(1)
+
+        # Cleanup when stopped
+        self._close()
+        self.state = TunnelState.INACTIVE
 
 class TunnelController:
     def __init__(self, name: str, config: TunnelConfig):
@@ -66,13 +183,13 @@ class TunnelController:
                         kwargs["ssh_password"] = self.config.ssh_password
                     if self.config.ssh_pkey:
                         kwargs["ssh_pkey"] = self.config.ssh_pkey
-                    
+
                     self.server = SSHTunnelForwarder(**kwargs)
                     self.server.start()
                     self.state = TunnelState.ACTIVE
                     self.error_message = ""
                     logger.info(f"Tunnel {self.name} started successfully.")
-                
+
             except BaseSSHTunnelForwarderError as e:
                 self.state = TunnelState.ERROR
                 self.error_message = str(e)
@@ -114,15 +231,31 @@ class TunnelManager:
         # Add or update tunnels
         for name, t_conf in config_manager.config.tunnels.items():
             if name not in self.controllers:
-                self.controllers[name] = TunnelController(name, t_conf)
+                if t_conf.tunnel_type == "remote":
+                    self.controllers[name] = ReverseTunnelController(name, t_conf)
+                else:
+                    self.controllers[name] = TunnelController(name, t_conf)
                 if t_conf.autostart:
                     self.controllers[name].start()
             else:
-                # If config changed, we should ideally restart. For simplicity, we restart if config obj is different.
-                # Since Pydantic models can be compared directly:
+                # If config changed, restart with correct controller type
                 if self.controllers[name].config != t_conf:
                     self.controllers[name].stop()
-                    self.controllers[name] = TunnelController(name, t_conf)
+                    if t_conf.tunnel_type == "remote":
+                        self.controllers[name] = ReverseTunnelController(name, t_conf)
+                    else:
+                        self.controllers[name] = TunnelController(name, t_conf)
+                    if t_conf.autostart:
+                        self.controllers[name].start()
+                # If tunnel_type changed, recreate controller
+                old_is_remote = isinstance(self.controllers[name], ReverseTunnelController)
+                new_is_remote = t_conf.tunnel_type == "remote"
+                if old_is_remote != new_is_remote:
+                    self.controllers[name].stop()
+                    if new_is_remote:
+                        self.controllers[name] = ReverseTunnelController(name, t_conf)
+                    else:
+                        self.controllers[name] = TunnelController(name, t_conf)
                     if t_conf.autostart:
                         self.controllers[name].start()
 

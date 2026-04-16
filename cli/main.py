@@ -47,7 +47,7 @@ def daemon(action: str = typer.Argument(..., help="start 或 stop")):
         typer.echo("无效的操作，请使用 start 或 stop。")
 
 @app.command()
-def add(name: str, ssh_host: str, ssh_user: str, local_port: int, remote_port: int, remote_host: str = "127.0.0.1", ssh_port: int = 22, autostart: bool = False, password: str = "", pkey: str = ""):
+def add(name: str, ssh_host: str, ssh_user: str, local_port: int, remote_port: int, remote_host: str = "127.0.0.1", ssh_port: int = 22, autostart: bool = False, password: str = "", pkey: str = "", tunnel_type: str = "local"):
     """添加新的 SSH 隧道配置"""
     conf = TunnelConfig(
         ssh_host=ssh_host,
@@ -56,7 +56,8 @@ def add(name: str, ssh_host: str, ssh_user: str, local_port: int, remote_port: i
         local_bind_port=local_port,
         remote_bind_host=remote_host,
         remote_bind_port=remote_port,
-        autostart=autostart
+        autostart=autostart,
+        tunnel_type=tunnel_type
     )
     if password:
         conf.ssh_password = password
@@ -120,11 +121,13 @@ def status():
             st = info["status"]
             err = info["error"]
             err_msg = f" ({err})" if err else ""
-            typer.echo(f"- {name}: [{st.upper()}]{err_msg} (本地: {info['config']['local_bind_port']} -> 远端: {info['config']['ssh_host']})")
+            t_type = info["config"].get("tunnel_type", "local")
+            type_label = "反向" if t_type == "remote" else "正向"
+            typer.echo(f"- {name}: [{st.upper()}]{err_msg} ({type_label}隧道 本地: {info['config']['local_bind_port']} -> 远端: {info['config']['ssh_host']})")
     except requests.exceptions.ConnectionError:
         typer.echo("守护进程未运行，仅显示本地配置：")
         for name, info in config_manager.config.tunnels.items():
-            typer.echo(f"- {name}: [未知] (本地端口: {info.local_bind_port} -> {info.ssh_host})")
+            typer.echo(f"- {name}: [未知] ({info.tunnel_type}隧道 本地端口: {info.local_bind_port} -> {info.ssh_host})")
 
 @app.command()
 def export(path: str):
