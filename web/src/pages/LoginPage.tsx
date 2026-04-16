@@ -20,10 +20,10 @@ function LoginPage() {
       login(data.access_token)
       navigate('/')
     } catch (err: any) {
-      if (err.response?.status === 401) {
-        setError('Invalid password')
+        if (err.response?.status === 401) {
+        setError('密码错误')
       } else {
-        setError('Connection failed. Please check if the daemon is running.')
+        setError('连接失败，请检查 Daemon 是否运行。')
       }
     } finally {
       setIsLoading(false)
@@ -37,14 +37,14 @@ function LoginPage() {
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label className="block text-sm font-medium text-text-secondary dark:text-text-secondary mb-1">
-              Password
+              密码
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-3 py-2 border border-border rounded-md bg-bg-input dark:bg-bg-input-dark text-text dark:text-text-dark focus:outline-none focus:border-border-focus"
-              placeholder="Enter your password"
+              placeholder="请输入密码"
               disabled={isLoading}
               autoFocus
             />
@@ -57,7 +57,7 @@ function LoginPage() {
             disabled={isLoading || !password}
             className="w-full bg-primary hover:bg-primary-hover disabled:bg-primary/50 text-white py-2 px-4 rounded-md transition-colors"
           >
-            {isLoading ? 'Logging in...' : 'Login'}
+            {isLoading ? '登录中...' : '登录'}
           </button>
         </form>
       </div>

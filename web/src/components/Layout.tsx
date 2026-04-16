@@ -66,13 +66,13 @@ function Layout() {
             href="/"
             className="block px-4 py-2 text-text-secondary hover:bg-bg-hover dark:text-text-secondary dark:hover:bg-bg-hover-dark"
           >
-            Tunnels
+            隧道列表
           </a>
           <a
             href="/logs"
             className="block px-4 py-2 text-text-secondary hover:bg-bg-hover dark:text-text-secondary dark:hover:bg-bg-hover-dark"
           >
-            Logs
+            日志
           </a>
         </nav>
         <div className="p-4 border-t border-border-light dark:border-border-light-dark space-y-2">
@@ -80,19 +80,19 @@ function Layout() {
             onClick={handleExport}
             className="w-full px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover dark:text-text-secondary dark:hover:bg-bg-hover-dark rounded-md text-left"
           >
-            Export Config
+            导出配置
           </button>
           <button
             onClick={handleImportClick}
             className="w-full px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover dark:text-text-secondary dark:hover:bg-bg-hover-dark rounded-md text-left"
           >
-            Import Config
+            导入配置
           </button>
           <button
             onClick={handleLogout}
             className="w-full px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover dark:text-text-secondary dark:hover:bg-bg-hover-dark rounded-md text-left"
           >
-            Logout
+            退出登录
           </button>
         </div>
       </aside>
@@ -100,9 +100,9 @@ function Layout() {
       {showImportDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-bg-primary dark:bg-bg-primary-dark rounded-lg shadow-xl p-6 w-[400px] border border-border-light dark:border-border-light-dark">
-            <h2 className="text-lg font-semibold text-text dark:text-text-dark mb-4">Import Configuration</h2>
+            <h2 className="text-lg font-semibold text-text dark:text-text-dark mb-4">导入配置</h2>
             <p className="text-sm text-text-secondary dark:text-text-secondary mb-4">
-              This will replace your current configuration. Are you sure you want to continue?
+              这将覆盖您当前的配置。确定要继续吗？
             </p>
             {importError && (
               <div className="mb-4 p-3 bg-error/10 border border-error/20 rounded-md">
@@ -114,10 +114,10 @@ function Layout() {
                 onClick={handleImportCancel}
                 className="px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover dark:text-text-secondary dark:hover:bg-bg-hover-dark rounded-md"
               >
-                Cancel
+                取消
               </button>
               <label className="px-4 py-2 text-sm bg-primary hover:bg-primary-hover text-white rounded-md cursor-pointer">
-                Choose File
+                选择文件
                 <input
                   type="file"
                   accept=".yaml,.yml"

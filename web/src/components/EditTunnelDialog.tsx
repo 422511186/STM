@@ -101,7 +101,7 @@ export default function EditTunnelDialog({
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (tunnelData && isOpen) {
+    if (isOpen && tunnelData) {
       const config = tunnelData.config
       setFormData({
         name: tunnelName,
@@ -115,8 +115,10 @@ export default function EditTunnelDialog({
         remote_bind_host: config.remote_bind_host || '127.0.0.1',
         remote_bind_port: String(config.remote_bind_port || '')
       })
+      setErrors({})
+      setSubmitError(null)
     }
-  }, [tunnelName, tunnelData, isOpen])
+  }, [isOpen, tunnelName, tunnelData])
 
   const handleChange = (field: keyof TunnelFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -142,22 +144,6 @@ export default function EditTunnelDialog({
     setSubmitError(null)
 
     try {
-      // Get current tunnels
-      const tunnelsResponse = await api.get('/tunnels')
-      const currentTunnels = tunnelsResponse.data as Record<string, any>
-
-      // If name changed, delete old tunnel
-      if (tunnelName !== formData.name && currentTunnels[tunnelName]) {
-        delete currentTunnels[tunnelName]
-      }
-
-      // Check if new name already exists
-      if (currentTunnels[formData.name] && tunnelName !== formData.name) {
-        setErrors({ name: '该名称已存在' })
-        setIsSubmitting(false)
-        return
-      }
-
       // Build tunnel config
       const tunnelConfig = {
         ssh_host: formData.ssh_host.trim(),
@@ -173,15 +159,17 @@ export default function EditTunnelDialog({
         tunnel_type: formData.tunnel_type
       }
 
-      // Add updated tunnel to config
-      currentTunnels[formData.name] = {
-        config: tunnelConfig,
-        status: tunnelData?.status || 'inactive',
-        error: tunnelData?.error || ''
+      // If name changed, delete old tunnel first (like GUI does)
+      if (tunnelName !== formData.name) {
+        try {
+          await api.delete(`/tunnels/${tunnelName}`)
+        } catch (err) {
+          // Ignore delete errors if old tunnel doesn't exist
+        }
       }
 
-      // Save config via reload endpoint
-      await api.post('/config/reload')
+      // Save tunnel via PUT endpoint
+      await api.put(`/tunnels/${formData.name}`, tunnelConfig)
 
       onSuccess()
       onClose()

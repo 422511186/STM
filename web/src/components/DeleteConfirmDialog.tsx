@@ -22,23 +22,20 @@ export default function DeleteConfirmDialog({
     setError(null)
 
     try {
-      // Get current tunnels
-      const tunnelsResponse = await api.get('/tunnels')
-      const currentTunnels = tunnelsResponse.data as Record<string, any>
-
-      // Remove the tunnel
-      if (currentTunnels[tunnelName]) {
-        delete currentTunnels[tunnelName]
-      }
-
-      // Reload config to apply changes
-      await api.post('/config/reload')
-
+      // Delete tunnel via API
+      await api.delete(`/tunnels/${tunnelName}`)
+      // If we get here, delete succeeded
       onSuccess()
       onClose()
     } catch (err: any) {
-      console.error('Failed to delete tunnel:', err)
-      setError(err.response?.data?.message || '删除隧道失败')
+      // Check if it actually failed or if it succeeded but axios threw
+      if (err.response?.status === 200 || err.response?.status === 404) {
+        // Actually succeeded (404 means already deleted)
+        onSuccess()
+        onClose()
+      } else {
+        setError(err.response?.data?.message || '删除隧道失败')
+      }
     } finally {
       setIsDeleting(false)
     }

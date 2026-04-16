@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Dict, Any
 from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import config_manager, TunnelConfig
 from core.tunnel import tunnel_manager
@@ -14,6 +15,16 @@ from daemon.auth import get_password_hash_from_env, verify_password, create_acce
 from daemon.middleware import AuthMiddleware
 
 app = FastAPI(title="SSH Tunnel Manager Daemon")
+
+# CORS middleware - allow frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.add_middleware(AuthMiddleware)
 
 # Startup time tracking
@@ -207,6 +218,55 @@ def reload_config():
     config_manager.config = config_manager.load()
     tunnel_manager.sync_tunnels(config_manager)
     return SuccessResponse(success=True, message="Configuration reloaded")
+
+
+class TunnelConfigInput(BaseModel):
+    ssh_host: str
+    ssh_port: int = 22
+    ssh_user: str
+    ssh_password: str | None = None
+    ssh_pkey: str | None = None
+    local_bind_host: str = "127.0.0.1"
+    local_bind_port: int
+    remote_bind_host: str = "127.0.0.1"
+    remote_bind_port: int
+    tunnel_type: str = "local"
+    autostart: bool = False
+
+
+@app.put("/tunnels/{name}", response_model=SuccessResponse)
+def update_tunnel(name: str, tunnel_config: TunnelConfigInput):
+    """Add or update a tunnel configuration"""
+    if name in config_manager.config.tunnels:
+        # Update existing
+        config_manager.config.tunnels[name] = TunnelConfig(**tunnel_config.model_dump())
+    else:
+        # Add new
+        config_manager.config.tunnels[name] = TunnelConfig(**tunnel_config.model_dump())
+
+    # Save to file
+    config_manager.save()
+    # Sync tunnels
+    tunnel_manager.sync_tunnels(config_manager)
+    return SuccessResponse(success=True, message=f"Tunnel {name} saved")
+
+
+@app.delete("/tunnels/{name}", response_model=SuccessResponse)
+def delete_tunnel(name: str):
+    """Delete a tunnel configuration"""
+    if name not in config_manager.config.tunnels:
+        raise HTTPException(status_code=404, detail="Tunnel not found")
+
+    del config_manager.config.tunnels[name]
+    # Stop tunnel if running
+    if tunnel_manager.controllers.get(name):
+        tunnel_manager.controllers[name].stop()
+        del tunnel_manager.controllers[name]
+    # Save to file
+    config_manager.save()
+    # Sync tunnels
+    tunnel_manager.sync_tunnels(config_manager)
+    return SuccessResponse(success=True, message=f"Tunnel {name} deleted")
 
 
 @app.post("/shutdown", response_model=SuccessResponse)

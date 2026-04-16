@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import api from '@/services/api'
 import { TunnelData, tunnelApi } from '@/services/tunnelService'
 import TunnelCard from '@/components/TunnelCard'
+import AddTunnelDialog from '@/components/AddTunnelDialog'
+import EditTunnelDialog from '@/components/EditTunnelDialog'
+import DeleteConfirmDialog from '@/components/DeleteConfirmDialog'
 
 interface TunnelMap {
   [name: string]: TunnelData
@@ -13,6 +16,10 @@ function TunnelListPage() {
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [isPollingPaused, setIsPollingPaused] = useState(false)
+  const [showAddDialog, setShowAddDialog] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [selectedTunnel, setSelectedTunnel] = useState<{name: string; data: TunnelData} | null>(null)
 
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const fetchTunnelsRef = useRef<() => Promise<void>>(async () => {})
@@ -25,7 +32,7 @@ function TunnelListPage() {
       setLastUpdated(new Date())
     } catch (err) {
       console.error('Failed to fetch tunnels:', err)
-      setError('Failed to load tunnels')
+      setError('加载隧道失败')
     } finally {
       setIsLoading(false)
     }
@@ -85,8 +92,8 @@ function TunnelListPage() {
     if (!date) return ''
     const now = new Date()
     const diff = Math.floor((now.getTime() - date.getTime()) / 1000)
-    if (diff < 5) return 'just now'
-    if (diff < 60) return `${diff}s ago`
+    if (diff < 5) return '刚刚'
+    if (diff < 60) return `${diff}秒前`
     return date.toLocaleTimeString()
   }
 
@@ -97,7 +104,7 @@ function TunnelListPage() {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-text-secondary dark:text-text-secondary">Loading tunnels...</p>
+          <p className="text-text-secondary dark:text-text-secondary">加载隧道中...</p>
         </div>
       </div>
     )
@@ -112,7 +119,7 @@ function TunnelListPage() {
             onClick={fetchTunnels}
             className="text-primary hover:text-primary-hover text-sm"
           >
-            Try again
+            重试
           </button>
         </div>
       </div>
@@ -123,30 +130,38 @@ function TunnelListPage() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-text dark:text-text-dark">Tunnels</h1>
+          <h1 className="text-xl font-semibold text-text dark:text-text-dark">隧道列表</h1>
           <p className="text-sm text-text-secondary dark:text-text-secondary mt-1">
-            Manage your SSH tunnel connections
+            管理您的 SSH 隧道连接
           </p>
         </div>
-        {lastUpdated && (
-          <div className="text-xs text-text-muted dark:text-text-muted">
-            {isPollingPaused ? (
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-warning" />
-                Paused
-              </span>
-            ) : (
-              <span>Updated {formatLastUpdated(lastUpdated)}</span>
-            )}
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowAddDialog(true)}
+            className="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm rounded-md transition-colors"
+          >
+            + 添加隧道
+          </button>
+          {lastUpdated && (
+            <div className="text-xs text-text-muted dark:text-text-muted">
+              {isPollingPaused ? (
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+                  已暂停
+                </span>
+              ) : (
+                <span>更新于 {formatLastUpdated(lastUpdated)}</span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {tunnelEntries.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-text-muted dark:text-text-muted">No tunnels configured</p>
+          <p className="text-text-muted dark:text-text-muted">暂无隧道配置</p>
           <p className="text-sm text-text-muted dark:text-text-muted mt-1">
-            Add a tunnel using the CLI to get started
+            点击上方「添加隧道」按钮创建
           </p>
         </div>
       ) : (
@@ -157,10 +172,57 @@ function TunnelListPage() {
               name={name}
               tunnel={data}
               onStatusChange={handleTunnelStatusChange}
+              onEdit={() => {
+                setSelectedTunnel({ name, data })
+                setShowEditDialog(true)
+              }}
+              onDelete={() => {
+                setSelectedTunnel({ name, data })
+                setShowDeleteDialog(true)
+              }}
             />
           ))}
         </div>
       )}
+
+      {/* Dialogs */}
+      <AddTunnelDialog
+        isOpen={showAddDialog}
+        onClose={() => setShowAddDialog(false)}
+        onSuccess={() => {
+          setShowAddDialog(false)
+          fetchTunnels()
+        }}
+      />
+
+      <EditTunnelDialog
+        isOpen={showEditDialog}
+        tunnelName={selectedTunnel?.name || ''}
+        tunnelData={selectedTunnel?.data || null}
+        onClose={() => {
+          setShowEditDialog(false)
+          setSelectedTunnel(null)
+        }}
+        onSuccess={() => {
+          setShowEditDialog(false)
+          setSelectedTunnel(null)
+          fetchTunnels()
+        }}
+      />
+
+      <DeleteConfirmDialog
+        isOpen={showDeleteDialog}
+        tunnelName={selectedTunnel?.name || ''}
+        onClose={() => {
+          setShowDeleteDialog(false)
+          setSelectedTunnel(null)
+        }}
+        onSuccess={() => {
+          setShowDeleteDialog(false)
+          setSelectedTunnel(null)
+          fetchTunnels()
+        }}
+      />
     </div>
   )
 }

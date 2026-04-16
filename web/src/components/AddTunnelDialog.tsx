@@ -115,17 +115,6 @@ export default function AddTunnelDialog({ isOpen, onClose, onSuccess }: AddTunne
     setSubmitError(null)
 
     try {
-      // Get current tunnels
-      const tunnelsResponse = await api.get('/tunnels')
-      const currentTunnels = tunnelsResponse.data as Record<string, any>
-
-      // Check if name already exists
-      if (currentTunnels[formData.name]) {
-        setErrors({ name: '该名称已存在' })
-        setIsSubmitting(false)
-        return
-      }
-
       // Build tunnel config
       const tunnelConfig = {
         ssh_host: formData.ssh_host.trim(),
@@ -141,17 +130,8 @@ export default function AddTunnelDialog({ isOpen, onClose, onSuccess }: AddTunne
         tunnel_type: formData.tunnel_type
       }
 
-      // Add new tunnel to config
-      currentTunnels[formData.name] = {
-        config: tunnelConfig,
-        status: 'inactive',
-        error: ''
-      }
-
-      // Save config via reload endpoint
-      // Note: In a real implementation, there should be a POST /config/tunnels endpoint
-      // For now, we use the reload endpoint after updating local config
-      await api.post('/config/reload')
+      // Save tunnel via PUT endpoint
+      await api.put(`/tunnels/${formData.name}`, tunnelConfig)
 
       setFormData({
         name: '',

@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/authStore'
 const TOKEN_KEY = 'ssh_tunnel_token'
 
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:50051',
+  baseURL: 'http://localhost:50051',
   headers: {
     'Content-Type': 'application/json'
   }

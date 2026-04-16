@@ -48,7 +48,7 @@ function LogsPage() {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-text-secondary dark:text-text-secondary">Loading logs...</p>
+          <p className="text-text-secondary dark:text-text-secondary">加载日志中...</p>
         </div>
       </div>
     )
@@ -58,9 +58,9 @@ function LogsPage() {
     <div className="flex flex-col h-[calc(100vh-120px)]">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-text dark:text-text-dark">Logs</h1>
+          <h1 className="text-xl font-semibold text-text dark:text-text-dark">日志</h1>
           <p className="text-sm text-text-secondary dark:text-text-secondary mt-1">
-            Tunnel operation logs
+            隧道操作日志
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -72,14 +72,14 @@ function LogsPage() {
               className="w-4 h-4 rounded border-border-light dark:border-border-light-dark bg-bg-card dark:bg-bg-card-dark text-primary focus:ring-primary"
             />
             <span className="text-sm text-text-secondary dark:text-text-secondary">
-              Auto-scroll
+              自动滚动
             </span>
           </label>
           <button
             onClick={fetchLogs}
             className="px-3 py-1.5 text-sm bg-primary hover:bg-primary-hover text-white rounded-md transition-colors"
           >
-            Refresh
+            刷新
           </button>
         </div>
       </div>
@@ -90,7 +90,7 @@ function LogsPage() {
           className="h-full overflow-auto p-4 text-sm font-mono leading-relaxed"
         >
           {logs.length === 0 ? (
-            <span className="text-text-muted dark:text-text-muted">No logs available</span>
+            <span className="text-text-muted dark:text-text-muted">暂无日志</span>
           ) : (
             logs.map((line, index) => (
               <div key={index} className={getLogColor(line)}>

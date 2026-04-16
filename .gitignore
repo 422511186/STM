@@ -12,3 +12,7 @@ config.yaml
 *.DS_Store
 *.egg-info/
 dist/
+*.spec
+build/
+.sisyphus/
+node_modules/
