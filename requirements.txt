@@ -7,3 +7,5 @@ requests
 customtkinter
 typer
 pydantic
+bcrypt
+python-jose[cryptography]
