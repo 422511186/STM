@@ -200,6 +200,65 @@ GUI 功能：
 
 ***
 
+## Web UI 使用
+
+提供浏览器端可视化界面，可替代 GUI。
+
+### 启动
+
+**1) 启动 Daemon**
+
+```bash
+python main.py cli daemon start
+```
+
+**2) 启动前端**
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+**3) 打开浏览器**
+
+访问：<http://localhost:3000>
+
+### 登录
+
+默认密码：`admin`
+
+可通过环境变量 `SSH_TUNNEL_MANAGER_PASSWORD` 修改。
+
+### 功能
+
+- **隧道管理**：查看、添加、编辑、删除隧道
+- **状态监控**：实时显示隧道状态（已连接/连接中/错误/未连接）
+- **启停控制**：一键启动/停止隧道
+- **配置导入导出**：通过侧边栏导出或导入配置
+- **日志查看**：查看 Daemon 操作日志
+
+### API 端点
+
+Daemon API 默认监听 `http://127.0.0.1:50051`：
+
+| 方法     | 路径                      | 说明                              |
+| ------ | ----------------------- | ------------------------------- |
+| POST   | `/auth/login`           | 登录（body: `{"password": "xxx"}`） |
+| POST   | `/auth/logout`          | 登出                              |
+| GET    | `/health`               | 健康检查                            |
+| GET    | `/tunnels`              | 获取所有隧道及状态                       |
+| POST   | `/tunnels/{name}/start` | 启动隧道                            |
+| POST   | `/tunnels/{name}/stop`  | 停止隧道                            |
+| PUT    | `/tunnels/{name}`       | 添加/更新隧道                         |
+| DELETE | `/tunnels/{name}`       | 删除隧道                            |
+| GET    | `/config/export`        | 导出配置                            |
+| POST   | `/config/import`        | 导入配置                            |
+| POST   | `/config/reload`        | 重载配置                            |
+| GET    | `/logs?lines=100`       | 获取日志                            |
+
+***
+
 ## CLI 命令说明
 
 查看 CLI 总帮助：
