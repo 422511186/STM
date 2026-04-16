@@ -1,0 +1,11 @@
+tunnels:
+  sub2api:
+    autostart: false
+    local_bind_host: 
+    local_bind_port: 
+    remote_bind_host: 
+    remote_bind_port: 
+    ssh_host: 
+    ssh_pkey: 
+    ssh_port: 
+    ssh_user: 

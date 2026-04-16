@@ -1,0 +1,9 @@
+paramiko==3.3.1
+sshtunnel
+pyyaml
+fastapi
+uvicorn
+requests
+customtkinter
+typer
+pydantic

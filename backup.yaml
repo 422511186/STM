@@ -1,0 +1,10 @@
+tunnels:
+  test_tunnel:
+    autostart: false
+    local_bind_host: 127.0.0.1
+    local_bind_port: 8080
+    remote_bind_host: 127.0.0.1
+    remote_bind_port: 80
+    ssh_host: 192.168.1.1
+    ssh_port: 22
+    ssh_user: root
