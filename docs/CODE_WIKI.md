@@ -1,561 +1,153 @@
 # SSH Tunnel Manager - Code Wiki
 
-## 项目概述
+## 1. 项目整体架构 (Project Architecture)
 
-SSH Tunnel Manager（SSH 隧道管理器）是一个跨平台（Windows / Linux）的 SSH 隧道管理工具，提供 **后台守护进程（Daemon）+ CLI + GUI** 三种组合能力。
+本项目是一个跨平台的 SSH 隧道管理工具，旨在提供灵活的隧道启停、重连以及配置管理能力。项目采用了 **后台守护进程（Daemon）+ 多客户端（CLI / GUI / Web UI）** 的架构模式。
 
-- **Daemon**：负责在后台维护隧道生命周期（支持状态查询、启停、断线重连）
-- **CLI**：用于脚本化与快速操作
-- **GUI**：用于可视化管理、导入导出配置、快速启停
+### 架构分层
+* **核心业务层 (Core)**：负责 SSH 隧道的建立、心跳维持、异常重连逻辑，以及 YAML 配置文件的持久化读写。
+* **服务层 (Daemon)**：基于 FastAPI 提供的后台守护进程，将核心业务能力封装为 REST API 暴露给各类客户端。
+* **表现层 (Clients)**：
+  * **CLI**：基于 Typer 实现，适合 Linux/无界面环境的快捷命令操作。
+  * **GUI**：基于 CustomTkinter 实现的桌面端可视化工具。
+  * **Web UI**：基于 React + Vite 实现的浏览器端可视化管理界面。
 
----
-
-## 目录结构
-
-```
-SSH-Tunnel-Manager/
-├── main.py                    # 项目入口文件
-├── config.yaml                # 配置文件（YAML格式）
-├── requirements.txt           # Python依赖
-├── README.md                   # 项目说明文档
-│
-├── core/                      # 核心模块
-│   ├── __init__.py
-│   ├── config.py              # 配置管理
-│   └── tunnel.py              # 隧道控制与重连逻辑
-│
-├── daemon/                     # 守护进程
-│   ├── __init__.py
-│   └── server.py              # Daemon REST API
-│
-├── cli/                        # 命令行界面
-│   ├── __init__.py
-│   └── main.py                # CLI入口
-│
-├── gui/                        # 图形界面
-│   ├── __init__.py
-│   └── main.py                # GUI入口
-│
-└── tests/                      # 测试文件
-    ├── test_config.py
-    ├── test_daemon_cli_smoke.py
-    └── test_tunnel_e2e.py
+```mermaid
+graph TD
+    A[Web UI (React)] -->|REST API| D(Daemon Server / FastAPI)
+    B[CLI (Typer)] -->|REST API| D
+    C[GUI (CustomTkinter)] -->|REST API| D
+    D -->|操作| E[TunnelManager]
+    D -->|读写| F[ConfigManager]
+    E --> G[SSHTunnelForwarder / Paramiko]
+    F --> H[(config.yaml)]
 ```
 
 ---
 
-## 架构设计
+## 2. 主要模块职责 (Module Responsibilities)
 
-### 整体架构图
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      用户界面层                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │    GUI      │  │    CLI      │  │  直接调用    │          │
-│  │ (CustomTkinter) │  │   (Typer)  │  │   (API)     │          │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘          │
-└─────────┼────────────────┼────────────────┼─────────────────┘
-          │                │                │
-          ▼                ▼                │
-┌─────────────────────────────────────────────────────────────┐
-│                    Daemon API 层 (FastAPI)                   │
-│                http://127.0.0.1:50051                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
-│  │GET/tunnels│  │POST/start│  │POST/stop │  │POST/shutdown│ │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘     │
-└───────┼────────────┼────────────┼─────────────┼────────────┘
-        │            │            │             │
-        ▼            ▼            ▼             ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    TunnelManager (核心)                      │
-│         管理所有 TunnelController 实例                         │
-│  ┌─────────────────────────────────────────────────┐         │
-│  │              TunnelController                   │         │
-│  │  - 隧道生命周期管理                               │         │
-│  │  - 自动重连机制                                   │         │
-│  │  - 状态监控                                       │         │
-│  └─────────────────────────────────────────────────┘         │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              SSHTunnelForwarder (sshtunnel库)                │
-│                    实际的SSH隧道连接                           │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 数据流
-
-1. **用户操作** → CLI/GUI/API
-2. **CLI/GUI/API** → Daemon HTTP API
-3. **Daemon** → TunnelManager → TunnelController
-4. **TunnelController** → SSHTunnelForwarder → SSH Server
+| 目录/模块 | 主要职责 |
+|---|---|
+| `core/` | 核心逻辑层。处理隧道生命周期、多隧道状态同步，以及配置的序列化与反序列化。 |
+| `daemon/` | 服务层。提供后台持续运行的能力，暴露 RESTful API 供前端/GUI/CLI 调用。 |
+| `cli/` | 命令行入口。提供终端下的添加、删除、启停、查看状态等快捷指令。 |
+| `gui/` | 桌面端入口。提供面向桌面用户的窗口化管理能力。 |
+| `web/` | Web 前端。浏览器中访问的隧道管理后台，支持查看状态、启停隧道与日志审计。 |
+| `main.py` | 系统的统一入口文件。用于解析启动参数并派发给具体的模块（如 CLI, Daemon, GUI）。 |
 
 ---
 
-## 模块详解
+## 3. 关键类与函数说明 (Key Classes & Functions)
 
-### 1. 入口模块 (main.py)
+### 3.1 核心层 (`core/`)
 
-**文件位置**: `main.py`
+#### `core.config.ConfigManager`
+**文件**: [core/config.py](file:///workspace/core/config.py)
+* **职责**：全局配置管理器，单例模式。负责加载和保存 `config.yaml`。
+* **关键方法**：
+  * `load() / save()`: 读写 YAML 配置文件。
+  * `add_tunnel() / remove_tunnel()`: 更新内存中的隧道配置字典，并落盘。
+  * `export_config() / import_config()`: 配置文件迁移功能。
 
-**功能**: 项目的统一入口，根据命令行参数分发到不同模块。
+#### `core.tunnel.TunnelManager`
+**文件**: [core/tunnel.py](file:///workspace/core/tunnel.py)
+* **职责**：隧道控制器统筹类，管理所有隧道的实例，维护内存中的隧道集合。
+* **关键方法**：
+  * `sync_tunnels()`: 根据当前 `config_manager` 的最新配置，同步增删改对应的控制器。
+  * `start_tunnel() / stop_tunnel()`: 触发指定隧道的启动/停止事件。
+  * `get_all_status()`: 汇集所有运行中控制器的状态，返回给 Daemon。
 
-**运行方式**:
+#### `core.tunnel.TunnelController` / `ReverseTunnelController`
+**文件**: [core/tunnel.py](file:///workspace/core/tunnel.py)
+* **职责**：负责单一隧道的建立、断线重连和状态上报。
+* **说明**：
+  * `TunnelController`: 包装了 `sshtunnel.SSHTunnelForwarder`，实现正向隧道（`-L`）。
+  * `ReverseTunnelController`: 包装了 `paramiko.SSHClient`，调用 `request_port_forward(reverse=True)` 实现反向隧道（`-R`）。
+  * 均包含一个 `_run_and_monitor` 后台线程，负责在遇到网络断开时（10秒延迟）自动重试。
 
-| 命令 | 说明 |
-|------|------|
-| `python main.py` | 启动 GUI（默认） |
-| `python main.py cli ...` | 使用 CLI |
-| `python main.py daemon` | 前台运行 Daemon |
-| `python main.py -h` | 显示帮助 |
+### 3.2 守护进程 (`daemon/`)
 
----
+#### `daemon.server.app`
+**文件**: [daemon/server.py](file:///workspace/daemon/server.py)
+* **职责**：FastAPI 应用实例。
+* **关键路由**：
+  * `POST /auth/login`: 密码校验并返回 JWT Token。
+  * `GET /tunnels`: 返回所有隧道的配置及其当前状态。
+  * `POST /tunnels/{name}/start|stop`: 控制隧道启停。
+  * `POST /config/reload`: 重载配置文件并同步到 `TunnelManager`。
 
-### 2. 配置管理模块 (core/config.py)
+### 3.3 客户端与界面
 
-**文件位置**: `core/config.py`
+#### `cli.main.app`
+**文件**: [cli/main.py](file:///workspace/cli/main.py)
+* **职责**：基于 Typer 构建的 CLI 解析器。
+* **关键逻辑**：通过 `requests` 模块向 Daemon `http://127.0.0.1:50051` 发送控制指令。如果是 `daemon start` 则通过 `subprocess.Popen` 在后台拉起 `daemon.server`。
 
-#### 类定义
-
-##### TunnelConfig
-
-SSH 隧道的配置数据模型，继承自 `pydantic.BaseModel`。
-
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `ssh_host` | str | - | SSH 服务器地址 |
-| `ssh_port` | int | 22 | SSH 端口 |
-| `ssh_user` | str | - | SSH 用户名 |
-| `ssh_password` | Optional[str] | None | SSH 密码（可选） |
-| `ssh_pkey` | Optional[str] | None | SSH 私钥路径（推荐） |
-| `local_bind_host` | str | 127.0.0.1 | 本地绑定地址 |
-| `local_bind_port` | int | - | 本地监听端口 |
-| `remote_bind_host` | str | 127.0.0.1 | 远端目标地址 |
-| `remote_bind_port` | int | - | 远端目标端口 |
-| `autostart` | bool | False | 是否自动启动 |
-
-##### AppConfig
-
-应用配置，包含所有隧道配置。
-
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `tunnels` | Dict[str, TunnelConfig] | {} | 隧道字典 |
-
-##### ConfigManager
-
-配置管理器，负责配置的加载、保存、导入导出。
-
-**主要方法**:
-
-| 方法 | 说明 |
-|------|------|
-| `load() -> AppConfig` | 从 config.yaml 加载配置 |
-| `save()` | 保存配置到 config.yaml |
-| `get_tunnel(name: str) -> Optional[TunnelConfig]` | 获取指定隧道配置 |
-| `add_tunnel(name: str, config: TunnelConfig)` | 添加/更新隧道 |
-| `remove_tunnel(name: str)` | 删除隧道 |
-| `export_config(path: str)` | 导出配置到文件 |
-| `import_config(path: str)` | 从文件导入配置 |
-
-**全局实例**: `config_manager = ConfigManager()`
+#### `gui.main.TunnelApp`
+**文件**: [gui/main.py](file:///workspace/gui/main.py)
+* **职责**：继承自 `customtkinter.CTk` 的主窗体类。
+* **关键逻辑**：内置了一个后台线程 `poll_daemon`，每隔 2 秒通过 HTTP 轮询 Daemon 状态，并实时刷新 GUI 的 UI 列表（如状态小圆点、启停按钮）。
 
 ---
 
-### 3. 隧道控制模块 (core/tunnel.py)
+## 4. 依赖关系 (Dependencies)
 
-**文件位置**: `core/tunnel.py`
+### Python 后端
+项目强依赖以下库（详见 [requirements.txt](file:///workspace/requirements.txt)）：
+* `paramiko` (固定为 `3.3.1`): 底层 SSH 协议实现，用于连接与反向隧道。
+* `sshtunnel`: 用于封装和建立稳定的正向隧道。
+* `fastapi` & `uvicorn`: 构建和运行后台 Daemon HTTP API。
+* `customtkinter`: 用于构建现代化的跨平台 GUI 界面。
+* `typer`: 用于快速构建好用的 CLI 命令行。
+* `pydantic` & `pyyaml`: 用于配置文件的校验与读写。
 
-#### 状态常量 (TunnelState)
-
-| 状态 | 值 | 说明 |
-|------|------|------|
-| `INACTIVE` | "inactive" | 未启动/已停止 |
-| `ACTIVE` | "active" | 运行中 |
-| `CONNECTING` | "connecting" | 连接中 |
-| `ERROR` | "error" | 错误状态 |
-
-#### TunnelController
-
-单个隧道的控制器，管理隧道的启动、停止、状态监控。
-
-**构造函数参数**:
-- `name: str` - 隧道名称
-- `config: TunnelConfig` - 隧道配置
-
-**主要方法**:
-
-| 方法 | 说明 |
-|------|------|
-| `start()` | 启动隧道 |
-| `stop()` | 停止隧道 |
-| `get_status() -> dict` | 获取隧道状态 |
-
-**状态字典结构**:
-```python
-{
-    "name": str,           # 隧道名称
-    "state": str,          # 状态 (inactive/active/connecting/error)
-    "error": str,          # 错误信息（如果有）
-    "local_port": int,     # 本地端口（仅活跃时）
-}
-```
-
-#### TunnelManager
-
-管理所有隧道控制器。
-
-**主要方法**:
-
-| 方法 | 说明 |
-|------|------|
-| `sync_tunnels(config_manager)` | 同步隧道配置 |
-| `start_tunnel(name: str)` | 启动指定隧道 |
-| `stop_tunnel(name: str)` | 停止指定隧道 |
-| `get_all_status() -> dict` | 获取所有隧道状态 |
-
-**全局实例**: `tunnel_manager = TunnelManager()`
+### Node 前端 (`web/`)
+* `react` & `vite`: 前端页面渲染与构建工具。
+* `tailwindcss`: 前端样式与布局。
 
 ---
 
-### 4. Daemon 模块 (daemon/server.py)
+## 5. 项目运行方式 (How to Run)
 
-**文件位置**: `daemon/server.py`
+### 5.1 环境准备
+1. 安装 Python 后端依赖:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. 安装 Web 前端依赖 (如果需要 Web UI):
+   ```bash
+   cd web && npm install
+   ```
 
-使用 FastAPI 实现的 HTTP REST API 服务。
-
-**默认配置**:
-- 监听地址: `127.0.0.1` (可通过环境变量 `SSH_TUNNEL_MANAGER_HOST` 修改)
-- 监听端口: `50051` (可通过环境变量 `SSH_TUNNEL_MANAGER_PORT` 修改)
-
-#### API 端点
-
-| 方法 | 路径 | 说明 | 请求体 | 响应 |
-|------|------|------|--------|------|
-| `GET` | `/tunnels` | 获取所有隧道状态 | - | `Dict[str, Any]` |
-| `POST` | `/tunnels/{name}/start` | 启动隧道 | - | `SuccessResponse` |
-| `POST` | `/tunnels/{name}/stop` | 停止隧道 | - | `SuccessResponse` |
-| `POST` | `/config/reload` | 重载配置 | - | `SuccessResponse` |
-| `POST` | `/shutdown` | 关闭 Daemon | - | `SuccessResponse` |
-
-#### 响应模型
-
-```python
-class SuccessResponse(BaseModel):
-    success: bool
-    message: str
-```
-
-#### 启动方式
-
-```python
-# 方式1: 命令行
-python main.py cli daemon start   # 后台运行
-python main.py daemon              # 前台运行
-
-# 方式2: Python模块
-python -m daemon.server
-```
-
----
-
-### 5. CLI 模块 (cli/main.py)
-
-**文件位置**: `cli/main.py`
-
-使用 `typer` 实现的命令行界面。
-
-#### 命令列表
-
-| 命令 | 说明 |
-|------|------|
-| `daemon start` | 启动守护进程 |
-| `daemon stop` | 停止守护进程 |
-| `add <name> <ssh_host> <ssh_user> <local_port> <remote_port>` | 添加隧道 |
-| `remove <name>` | 删除隧道 |
-| `start <name> [names...]` | 启动一个或多个隧道 |
-| `stop <name>` | 停止隧道 |
-| `list` | 列出所有隧道 |
-| `status` | 查看隧道状态 |
-| `export <path>` | 导出配置 |
-| `load <path>` | 导入配置 |
-
-#### add 命令参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `name` | str | - | 隧道名称 |
-| `ssh_host` | str | - | SSH 服务器地址 |
-| `ssh_user` | str | - | SSH 用户名 |
-| `local_port` | int | - | 本地端口 |
-| `remote_port` | int | - | 远端端口 |
-| `--remote-host` | str | 127.0.0.1 | 远端目标地址 |
-| `--ssh-port` | int | 22 | SSH 端口 |
-| `--password` | str | "" | SSH 密码 |
-| `--pkey` | str | "" | SSH 私钥路径 |
-| `--autostart` | bool | False | 是否自动启动 |
-
-#### 使用示例
-
+### 5.2 启动守护进程 (Daemon)
+所有的功能都需要 Daemon 在后台运行来维持隧道连接。
 ```bash
-# 启动守护进程
 python main.py cli daemon start
+```
 
-# 添加隧道（使用私钥）
-python main.py cli add mysql 10.0.0.10 ubuntu 13306 3306 --pkey ~/.ssh/id_rsa
-
-# 添加隧道（使用密码）
-python main.py cli add mysql 10.0.0.10 ubuntu 13306 3306 --password "your_password"
-
-# 启动多个隧道
-python main.py cli start tunnel1 tunnel2 tunnel3
-
+### 5.3 启动不同形态的客户端
+**方式一：使用 CLI (命令行)**
+```bash
 # 查看状态
 python main.py cli status
+# 添加正向隧道
+python main.py cli add my_tunnel 10.0.0.10 root 8080 80 --pkey ~/.ssh/id_rsa
+# 启动/停止
+python main.py cli start my_tunnel
+python main.py cli stop my_tunnel
 ```
 
----
-
-### 6. GUI 模块 (gui/main.py)
-
-**文件位置**: `gui/main.py`
-
-使用 `CustomTkinter` 实现的图形界面。
-
-#### 窗口布局
-
-```
-┌────────────────────────────────────────────────────────────┐
-│                    SSH 隧道管理器                            │
-├──────────┬─────────────────────────────────────────────────┤
-│          │                                                  │
-│ 启动守护进程 │   隧道列表区域                                  │
-│ 关闭守护进程 │   ┌────────────────────────────────────┐     │
-│ 添加隧道    │   │ name │ 描述 │ 状态 │ 操作          │     │
-│ 导入配置    │   ├────────────────────────────────────┤     │
-│ 导出配置    │   │      │      │      │ 启动/停止     │     │
-│          │   │      │      │      │ 编辑/删除      │     │
-│          │   └────────────────────────────────────┘     │
-│ 守护进程: 在线│                                                  │
-├──────────┴─────────────────────────────────────────────────┤
-│ 操作日志                                                   │
-│ [时间戳] [级别] 消息内容                                      │
-└────────────────────────────────────────────────────────────┘
-```
-
-#### 主要类
-
-##### TunnelApp
-
-主窗口类，继承自 `customtkinter.CTk`。
-
-**主要方法**:
-
-| 方法 | 说明 |
-|------|------|
-| `_build_sidebar()` | 构建侧边栏 |
-| `_build_main_area()` | 构建主显示区域 |
-| `_build_log_area()` | 构建日志区域 |
-| `start_daemon()` | 启动守护进程 |
-| `stop_daemon()` | 关闭守护进程 |
-| `open_add_dialog(edit_name)` | 打开添加/编辑对话框 |
-| `import_config()` | 导入配置 |
-| `export_config()` | 导出配置 |
-| `poll_daemon()` | 轮询守护进程状态（后台线程） |
-| `update_tunnels_ui(data)` | 更新隧道列表UI |
-| `toggle_tunnel(name, action)` | 启动/停止隧道 |
-| `delete_tunnel(name)` | 删除隧道 |
-| `add_log(message, level)` | 添加日志 |
-
-#### 状态显示
-
-| 状态 | 颜色 | 说明 |
-|------|------|------|
-| 活跃 | 绿色 | 隧道正在运行 |
-| 连接中 | 橙色 | 隧道正在连接 |
-| 错误 | 红色 | 隧道出错 |
-| 未连接 | 灰色 | 隧道未启动 |
-
-#### 日志级别
-
-| 级别 | 颜色 | 说明 |
-|------|------|------|
-| INFO | 白色 | 一般信息 |
-| SUCCESS | 绿色 | 成功操作 |
-| WARN | 橙色 | 警告信息 |
-| ERROR | 红色 | 错误信息 |
-
----
-
-## 配置文件 (config.yaml)
-
-### 示例配置
-
-```yaml
-tunnels:
-  mysql_tunnel:
-    ssh_host: 10.0.0.10
-    ssh_port: 22
-    ssh_user: ubuntu
-    ssh_password: null                    # 推荐使用私钥认证
-    ssh_pkey: /home/user/.ssh/id_rsa     # 私钥路径
-    local_bind_host: 127.0.0.1
-    local_bind_port: 13306
-    remote_bind_host: 127.0.0.1
-    remote_bind_port: 3306
-    autostart: false
-```
-
-### 字段说明
-
-| 字段 | 说明 |
-|------|------|
-| `tunnels` | 隧道配置字典 |
-| `ssh_host` | SSH 登录的目标服务器地址 |
-| `ssh_port` | SSH 端口，默认 22 |
-| `ssh_user` | SSH 用户名 |
-| `ssh_password` | SSH 密码（可选，推荐使用 ssh_pkey） |
-| `ssh_pkey` | SSH 私钥路径（可选，推荐） |
-| `local_bind_host` | 本地监听地址 |
-| `local_bind_port` | 本地监听端口（转发到远程的端口） |
-| `remote_bind_host` | 远程目标地址（通过 SSH 隧道后访问的地址） |
-| `remote_bind_port` | 远程目标端口 |
-| `autostart` | Daemon 启动时是否自动启动此隧道 |
-
----
-
-## 依赖关系
-
-```
-requirements.txt
-├── paramiko==3.3.1       # SSH 客户端库
-├── sshtunnel             # SSH 隧道封装
-├── pyyaml                # YAML 配置文件解析
-├── fastapi               # Web 框架（Daemon API）
-├── uvicorn               # ASGI 服务器
-├── requests              # HTTP 客户端
-├── customtkinter         # GUI 框架
-├── typer                 # CLI 框架
-└── pydantic              # 数据验证
-```
-
----
-
-## 环境变量
-
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `SSH_TUNNEL_MANAGER_HOST` | 127.0.0.1 | Daemon 监听地址 |
-| `SSH_TUNNEL_MANAGER_PORT` | 50051 | Daemon 监听端口 |
-| `SSH_TUNNEL_MANAGER_CONFIG` | config.yaml | 配置文件路径 |
-
----
-
-## 配置迁移
-
-### 迁移步骤
-
-**1) 导出配置**
-
-在原电脑上执行：
-```bash
-python main.py cli export backup.yaml
-```
-
-**2) 复制私钥文件**
-
-将 SSH 私钥文件（如 `~/.ssh/id_rsa`）复制到新电脑的相同或自定义位置。
-
-**3) 导入配置**
-
-在新电脑上执行：
-```bash
-python main.py cli load backup.yaml
-```
-
-**4) 修改私钥路径**（如果新电脑路径不同）
-
-编辑 `config.yaml`，更新私钥路径为新电脑上的实际位置：
-```yaml
-ssh_pkey: /home/username/.ssh/id_rsa
-```
-
-### 注意事项
-
-- **私钥文件需要单独复制**：配置文件只记录私钥路径，不会自动迁移私钥文件
-- **建议使用公钥认证**：避免在配置中存储密码，配置可迁移到任何设备
-- **新设备需要公钥已添加到服务器**：确保 SSH 服务器的 `~/.ssh/authorized_keys` 中包含你的公钥
-
----
-
-## 快速开始
-
-### 1. 安装依赖
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. 启动 Daemon
-
-```bash
-python main.py cli daemon start
-```
-
-### 3. 添加隧道
-
-```bash
-# 使用私钥认证
-python main.py cli add mysql_tunnel 10.0.0.10 ubuntu 13306 3306 --pkey ~/.ssh/id_rsa
-
-# 或使用密码认证
-python main.py cli add mysql_tunnel 10.0.0.10 ubuntu 13306 3306 --password "your_password"
-```
-
-### 4. 启动隧道
-
-```bash
-python main.py cli start mysql_tunnel
-```
-
-### 5. 查看状态
-
-```bash
-python main.py cli status
-```
-
-### 6. 使用 GUI
-
+**方式二：使用 GUI (桌面端)**
+直接运行根目录的 `main.py` 即可唤起 CustomTkinter 界面（需具备桌面环境）。
 ```bash
 python main.py
 ```
 
----
-
-## 安全建议
-
-1. **优先使用私钥认证**：避免在配置文件中存储密码
-2. **不要提交密码到代码仓库**：将 `config.yaml` 加入 `.gitignore`
-3. **Daemon 只监听本地回环地址**：默认不暴露到外网
-4. **跳过主机密钥检查**：配置中 `set_keepalive` 已设置，防止长时间无响应断开
-
----
-
-## 常见问题
-
-### 1. Daemon is not running
-
-守护进程未启动。先执行：
+**方式三：使用 Web UI (浏览器)**
+启动前端开发服务器：
 ```bash
-python main.py cli daemon start
+cd web
+npm run dev
 ```
-
-### 2. No password or public key available
-
-未提供认证凭据。确保提供 `--password` 或 `--pkey`。
-
-### 3. GUI 无法启动
-
-GUI 需要桌面环境。在 Linux Server / Docker / WSL 等无桌面环境里请使用 CLI。
+打开浏览器访问 `http://localhost:3000` 即可使用 Web 页面管理后台。
