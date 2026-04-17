@@ -116,6 +116,29 @@ Daemon 默认监听：
 
 ## 安装
 
+### 方式一：直接使用可执行文件（推荐）
+
+下载预编译的 `stm.exe` 单文件命令，解压后直接运行，无需安装 Python 或任何依赖：
+
+```bash
+# 查看帮助
+stm.exe --help
+
+# 查看隧道列表
+stm.exe list
+
+# 查看隧道状态
+stm.exe status
+
+# 启动守护进程
+stm.exe daemon start
+
+# 添加隧道
+stm.exe add my_tunnel --ssh-host 10.0.0.10 --ssh-user ubuntu --local-port 13306 --remote-port 3306 --pkey ~/.ssh/id_rsa
+```
+
+### 方式二：源码安装
+
 在项目根目录执行：
 
 ```bash
@@ -413,6 +436,29 @@ ssh_pkey: /home/username/.ssh/id_rsa
 - **私钥文件需要单独复制**：配置文件只记录私钥路径，不会自动迁移私钥文件
 - **建议使用公钥认证**：避免在配置中存储密码，配置可迁移到任何设备
 - **新设备需要公钥已添加到服务器**：确保 SSH 服务器的 `~/.ssh/authorized_keys` 中包含你的公钥
+
+***
+
+## 构建 stm.exe（可选）
+
+如果你需要重新打包 `stm.exe`，可执行以下步骤：
+
+### 前置要求
+
+```bash
+pip install pyinstaller
+```
+
+### Windows 构建
+
+```bash
+cd packaging
+.\build_with_cli.bat
+```
+
+构建完成后，单文件可执行文件位于 `dist\stm.exe`。
+
+> 说明：打包后会包含 Python 运行时和所有依赖库，文件体积约 37-38MB，可在任意 Windows 机器上直接运行。
 
 ***
 
