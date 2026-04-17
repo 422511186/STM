@@ -118,23 +118,44 @@ Daemon 默认监听：
 
 ### 方式一：直接使用可执行文件（推荐）
 
-下载预编译的 `stm.exe` 单文件命令，解压后直接运行，无需安装 Python 或任何依赖：
+下载预编译的 `stm.exe` 单文件命令，解压后直接运行，无需安装 Python 或任何依赖。
+
+**全局安装（添加到系统 PATH）：**
+
+以管理员身份运行 PowerShell，执行：
+
+```powershell
+# 创建软链接到系统目录
+New-Item -ItemType SymbolicLink -Path "C:\Windows\System32\stm.exe" -Target "d:\Projects\SSH-Tunnel-Manager\dist\stm.exe"
+```
+
+> 说明：需要管理员权限。软链接方式便于后续更新 exe 文件。
+
+**卸载：**
+
+以管理员身份运行 PowerShell，执行：
+
+```powershell
+Remove-Item "C:\Windows\System32\stm.exe"
+```
+
+**使用示例：**
 
 ```bash
 # 查看帮助
-stm.exe --help
+stm --help
 
 # 查看隧道列表
-stm.exe list
+stm list
 
 # 查看隧道状态
-stm.exe status
+stm status
 
 # 启动守护进程
-stm.exe daemon start
+stm daemon start
 
 # 添加隧道
-stm.exe add my_tunnel --ssh-host 10.0.0.10 --ssh-user ubuntu --local-port 13306 --remote-port 3306 --pkey ~/.ssh/id_rsa
+stm add my_tunnel --ssh-host 10.0.0.10 --ssh-user ubuntu --local-port 13306 --remote-port 3306 --pkey ~/.ssh/id_rsa
 ```
 
 ### 方式二：源码安装
