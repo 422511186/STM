@@ -483,6 +483,54 @@ cd packaging
 
 ***
 
+## Linux 服务器部署
+
+在 Linux 服务器上创建专用于端口转发的 SSH 用户。
+
+### 创建隧道用户
+
+项目包含一个辅助脚本 `packaging/create_tunnel_user.sh`，可快速创建仅支持 TCP 端口转发的 SSH 用户。
+
+**使用方式**:
+
+```bash
+# 添加执行权限
+chmod +x packaging/create_tunnel_user.sh
+
+# 创建隧道用户
+sudo ./packaging/create_tunnel_user.sh tunnel_user
+```
+
+**输出示例**:
+```
+隧道账号已创建: tunnel_user
+密码: Ab3dEfGh12345678
+用户连接命令: ssh -L <本地端口>:<目标>:<目标端口> tunnel_user@<服务器IP>
+```
+
+**功能说明**:
+- 创建不可登录的 SSH 用户（使用 nologin shell）
+- 自动生成随机密码（16位）
+- 配置 SSHd 支持 TCP 端口转发
+- 禁止 X11 转发和命令执行
+
+**安全说明**:
+- 用户 shell 设为 `/usr/sbin/nologin`，禁止交互式登录
+- 密码仅用于 SSH 认证（端口转发需要）
+- 仅允许 TCP 端口转发，禁止其他SSH功能
+
+**创建后使用**:
+
+```bash
+# 通过隧道访问远程服务
+ssh -L 13306:目标主机:3306 tunnel_user@服务器IP
+
+# 或者使用 STM 添加隧道配置（需要设置密码）
+python main.py cli add my_tunnel 服务器IP tunnel_user 13306 3306 --password "密码"
+```
+
+***
+
 ## 常见问题（Troubleshooting）
 
 ### 1) `Daemon is not running` / 无法连接 50051

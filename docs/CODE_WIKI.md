@@ -42,6 +42,7 @@ SSH-Tunnel-Manager/
 │
 ├── packaging/                  # 打包脚本
 │   ├── build_with_cli.bat     # Windows 构建脚本
+│   ├── create_tunnel_user.sh  # Linux 隧道用户创建脚本
 │   └── README.md              # 打包说明
 │
 └── tests/                      # 测试文件
@@ -470,6 +471,39 @@ New-Item -ItemType SymbolicLink -Path "C:\Windows\System32\stm.exe" -Target "d:\
 ```powershell
 Remove-Item "C:\Windows\System32\stm.exe"
 ```
+
+#### 隧道用户创建脚本 (create_tunnel_user.sh)
+
+**文件位置**: `packaging/create_tunnel_user.sh`
+
+在 Linux 服务器上创建仅支持端口转发的 SSH 用户。
+
+**功能**:
+- 创建不可登录的 SSH 用户（使用 nologin shell）
+- 生成随机密码（16位）
+- 配置 SSHd 支持 TCP 端口转发
+
+**使用方式**:
+
+```bash
+# 添加执行权限
+chmod +x packaging/create_tunnel_user.sh
+
+# 创建隧道用户
+sudo ./packaging/create_tunnel_user.sh <username>
+```
+
+**输出示例**:
+```
+隧道账号已创建: tunnel_user
+密码: Ab3dEfGh12345678
+用户连接命令: ssh -L <本地端口>:<目标>:<目标端口> tunnel_user@<服务器IP>
+```
+
+**安全说明**:
+- 用户 shell 设为 `/usr/sbin/nologin`，禁止交互式登录
+- 密码用于 SSH 认证（端口转发需要）
+- 仅允许 TCP 端口转发，禁止 X11 转发和命令执行
 
 ---
 
