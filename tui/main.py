@@ -118,6 +118,12 @@ class TunnelFormModal(ModalScreen[dict]):
         elif event.button.id == "btn-cancel":
             self.dismiss(None)
 
+class TunnelButton(Button):
+    def __init__(self, label: str, tunnel_name: str, action: str, variant: str = "default", id: str | None = None):
+        super().__init__(label, variant=variant, id=id)
+        self.tunnel_name = tunnel_name
+        self.action = action
+
 class TunnelCard(Static):
     class Action(Message):
         def __init__(self, tunnel_name: str, action: str):
@@ -141,15 +147,18 @@ class TunnelCard(Static):
             
             with Horizontal(classes="tunnel-actions"):
                 if self.status in ("active", "connecting", "error"):
-                    yield Button("停止", variant="warning", id=f"btn-stop-{self.tunnel_name}")
+                    yield TunnelButton("停止", self.tunnel_name, "stop", variant="warning")
                 else:
-                    yield Button("启动", variant="success", id=f"btn-start-{self.tunnel_name}")
-                yield Button("编辑", id=f"btn-edit-{self.tunnel_name}")
-                yield Button("删除", variant="error", id=f"btn-delete-{self.tunnel_name}")
+                    yield TunnelButton("启动", self.tunnel_name, "start", variant="success")
+                yield TunnelButton("编辑", self.tunnel_name, "edit")
+                yield TunnelButton("删除", self.tunnel_name, "delete", variant="error")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        action = event.button.id.split("-")[1]
-        self.post_message(self.Action(self.tunnel_name, action))
+        if isinstance(event.button, TunnelButton):
+            self.post_message(self.Action(event.button.tunnel_name, event.button.action))
+        else:
+            # Handle other buttons if any, though here they are all TunnelButtons
+            pass
 
 class TunnelManagerApp(App):
     CSS = '''

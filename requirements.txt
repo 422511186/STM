@@ -10,3 +10,4 @@ pydantic
 bcrypt
 python-jose[cryptography]
 textual
+python-multipart
