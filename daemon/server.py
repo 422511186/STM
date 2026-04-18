@@ -5,7 +5,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -224,8 +224,8 @@ class TunnelConfigInput(BaseModel):
     ssh_host: str
     ssh_port: int = 22
     ssh_user: str
-    ssh_password: str | None = None
-    ssh_pkey: str | None = None
+    ssh_password: Optional[str] = None
+    ssh_pkey: Optional[str] = None
     local_bind_host: str = "127.0.0.1"
     local_bind_port: int
     remote_bind_host: str = "127.0.0.1"
