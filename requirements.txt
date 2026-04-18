@@ -9,3 +9,4 @@ typer
 pydantic
 bcrypt
 python-jose[cryptography]
+textual
